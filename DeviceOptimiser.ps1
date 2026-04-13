@@ -1,144 +1,129 @@
-Clear-Host
-Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "        Windows Device Optimiser         "
-Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host ""
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
 
-# Ensure we're running on Windows
-if (-not $IsWindows) {
-    Write-Host "This script is intended to run on Windows PowerShell. Exiting." -ForegroundColor Red
-    exit 1
+# ---------------- FORM ----------------
+$form = New-Object System.Windows.Forms.Form
+$form.Text = "Windows Device Optimiser"
+$form.Size = New-Object System.Drawing.Size(420,480)
+$form.StartPosition = "CenterScreen"
+
+# ---------------- CHECKBOX HELPER ----------------
+$checkboxes = @()
+
+function New-CheckBox($text, $y) {
+    $cb = New-Object System.Windows.Forms.CheckBox
+    $cb.Text = $text
+    $cb.Location = New-Object System.Drawing.Point(20,$y)
+    $cb.AutoSize = $true
+    $form.Controls.Add($cb)
+    $checkboxes += $cb
+    return $cb
 }
 
-# ---------------- DEVICE REPORTING ----------------
+# ---------------- CHECKBOXES ----------------
+$cbAll      = New-CheckBox "Select All" 20
+$cbTemp     = New-CheckBox "User Temp Files" 60
+$cbWinTemp  = New-CheckBox "Windows Temp Files" 90
+$cbPrefetch = New-CheckBox "Prefetch Files" 120
+$cbChrome   = New-CheckBox "Chrome Cache" 150
+$cbEdge     = New-CheckBox "Edge Cache" 180
+$cbUpdate   = New-CheckBox "Reset Windows Update Cache (Advanced)" 210
+$cbRecycle  = New-CheckBox "Recycle Bin" 240
+$cbDeferred = New-CheckBox "Deferred Updates Cleanup" 270
 
-$device = @{
-    computerName = $env:COMPUTERNAME
-    username = $env:USERNAME
-    os = (Get-CimInstance Win32_OperatingSystem).Caption
-    version = "1.0"
-}
-
-$json = $device | ConvertTo-Json
-
-try {
-    Invoke-RestMethod `
-        -Uri "https://device-optimiser-server.onrender.com" `
-        -Method POST `
-        -Body $json `
-        -ContentType "application/json"
-}
-catch {
-    Write-Host "Device reporting failed (server unavailable)" -ForegroundColor Yellow
-}
-
-# ---------------------------------------------------
-
-$psdrive = Get-PSDrive -Name C -ErrorAction SilentlyContinue
-if ($psdrive) {
-    $DiskBefore = $psdrive.Free
-}
-else {
-    $DiskBefore = 0
-}
-$TotalFiles = 0
-
-function Clean-Folder {
-    param ($Path)
-
-    # Expand the path into items and remove them individually. This avoids issues with
-    # wildcard paths and Null results from Get-ChildItem.
-    $items = Get-ChildItem -Path $Path -Recurse -Force -ErrorAction SilentlyContinue
-
-    # If there are no items, try to see if the path itself exists (for paths without wildcards)
-    if (-not $items) {
-        if (Test-Path $Path) {
-            $items = Get-ChildItem -Path $Path -Force -ErrorAction SilentlyContinue
+# ---------------- SELECT ALL ----------------
+$cbAll.Add_CheckedChanged({
+    foreach ($cb in $checkboxes) {
+        if ($cb -ne $cbAll) {
+            $cb.Checked = $cbAll.Checked
         }
     }
+})
 
-    $count = 0
-    if ($items) {
-        # Count files and directories
-        $count = ($items | Measure-Object).Count
+# ---------------- BUTTON ----------------
+$btnRun = New-Object System.Windows.Forms.Button
+$btnRun.Text = "Run Optimisation"
+$btnRun.Size = New-Object System.Drawing.Size(160,40)
+$btnRun.Location = New-Object System.Drawing.Point(120,340)
+$form.Controls.Add($btnRun)
 
-        foreach ($it in $items) {
-            try {
-                Remove-Item -LiteralPath $it.FullName -Recurse -Force -ErrorAction SilentlyContinue
-            }
-            catch {
-                # ignore individual remove errors
-            }
+# ---------------- CLEAN FUNCTION ----------------
+function Clean-Folder($path) {
+    if (Test-Path $path) {
+        Get-ChildItem $path -Recurse -Force -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            try { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue } catch {}
         }
-
-        $global:TotalFiles += $count
     }
-
-    Write-Host "Cleaned: $Path"
-    Write-Host "Files removed: $count"
-    Write-Host ""
 }
 
-Write-Host "Starting cleanup..." -ForegroundColor Yellow
-Write-Host ""
+# ---------------- BUTTON CLICK ----------------
+$btnRun.Add_Click({
 
-# ---------------- CLOSE BROWSERS ----------------
-
-$chrome = Get-Process chrome -ErrorAction SilentlyContinue
-if ($chrome) {
-    Write-Host "Closing Google Chrome..." -ForegroundColor Yellow
+    # Close browsers
     Stop-Process -Name chrome -Force -ErrorAction SilentlyContinue
-}
-
-$edge = Get-Process msedge -ErrorAction SilentlyContinue
-if ($edge) {
-    Write-Host "Closing Microsoft Edge..." -ForegroundColor Yellow
     Stop-Process -Name msedge -Force -ErrorAction SilentlyContinue
-}
 
-# ------------------------------------------------
+    # ---------------- CLEANUP ----------------
+    if ($cbTemp.Checked) {
+        Clean-Folder "$env:TEMP"
+    }
 
-# User Temp
-Clean-Folder "$env:TEMP\*"
+    if ($cbWinTemp.Checked) {
+        Clean-Folder "C:\Windows\Temp"
+    }
 
-# Windows Temp
-Clean-Folder "C:\Windows\Temp\*"
+    if ($cbPrefetch.Checked) {
+        Clean-Folder "C:\Windows\Prefetch"
+    }
 
-# Prefetch
-Clean-Folder "C:\Windows\Prefetch\*"
+    if ($cbChrome.Checked) {
+        Clean-Folder "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Cache"
+    }
 
-# Chrome Cache
-Clean-Folder "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Cache\*"
+    if ($cbEdge.Checked) {
+        Clean-Folder "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Cache"
+    }
 
-# Edge Cache
-Clean-Folder "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Cache\*"
+    if ($cbDeferred.Checked) {
+        Clean-Folder "C:\Windows\SoftwareDistribution\DeliveryOptimization"
+    }
 
-# ---------------- WINDOWS UPDATE CACHE ----------------
+    if ($cbRecycle.Checked) {
+        Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+    }
 
-Write-Host "Cleaning Windows Update Cache..."
+    # ---------------- WINDOWS UPDATE FULL CLEAN ----------------
+    if ($cbUpdate.Checked) {
 
-Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
+        $confirm = [System.Windows.Forms.MessageBox]::Show(
+            "This will reset Windows Update cache and remove update history. Continue?",
+            "Warning",
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        )
 
-Clean-Folder "C:\Windows\SoftwareDistribution\Download\*"
+        if ($confirm -eq "Yes") {
 
-Start-Service wuauserv -ErrorAction SilentlyContinue
+            Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
+            Stop-Service bits -Force -ErrorAction SilentlyContinue
 
-# ------------------------------------------------------
+            Remove-Item "C:\Windows\SoftwareDistribution\*" -Recurse -Force -ErrorAction SilentlyContinue
 
-# Recycle Bin
-Write-Host "Cleaning Recycle Bin..."
-Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+            Start-Service wuauserv -ErrorAction SilentlyContinue
+            Start-Service bits -ErrorAction SilentlyContinue
+        }
+    }
 
-# ---------------- FINAL REPORT ----------------
+    # ---------------- COMPLETE MESSAGE ----------------
+    [System.Windows.Forms.MessageBox]::Show(
+        "Optimisation Completed Successfully",
+        "Device Optimiser",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Information
+    )
+})
 
-$DiskAfter = (Get-PSDrive C).Free
-$Recovered = ($DiskAfter - $DiskBefore) / 1GB
-
-Write-Host ""
-Write-Host "=========================================" -ForegroundColor Green
-Write-Host "Cleanup Completed"
-Write-Host "=========================================" -ForegroundColor Green
-Write-Host ""
-
-Write-Host "Total files processed: $TotalFiles"
-Write-Host "Disk space recovered: $([math]::Round($Recovered,2)) GB"
+# ---------------- RUN ----------------
+$form.Topmost = $true
+$form.ShowDialog()
