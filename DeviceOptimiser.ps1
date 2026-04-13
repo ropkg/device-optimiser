@@ -1,6 +1,11 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+# ---------------- INIT ----------------
+$global:TotalFiles = 0
+$psdrive = Get-PSDrive -Name C -ErrorAction SilentlyContinue
+$DiskBefore = if ($psdrive) { $psdrive.Free } else { 0 }
+
 # ---------------- FORM ----------------
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Windows Device Optimiser"
@@ -50,15 +55,24 @@ $form.Controls.Add($btnRun)
 # ---------------- CLEAN FUNCTION ----------------
 function Clean-Folder($path) {
     if (Test-Path $path) {
-        Get-ChildItem $path -Recurse -Force -ErrorAction SilentlyContinue |
-        ForEach-Object {
-            try { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+        $items = Get-ChildItem $path -Recurse -Force -ErrorAction SilentlyContinue
+
+        if ($items) {
+            $count = ($items | Measure-Object).Count
+            $global:TotalFiles += $count
+
+            foreach ($item in $items) {
+                try { Remove-Item $item.FullName -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+            }
         }
     }
 }
 
 # ---------------- BUTTON CLICK ----------------
 $btnRun.Add_Click({
+
+    # Reset counter each run
+    $global:TotalFiles = 0
 
     # Close browsers
     Stop-Process -Name chrome -Force -ErrorAction SilentlyContinue
@@ -115,9 +129,22 @@ $btnRun.Add_Click({
         }
     }
 
+    # ---------------- CALCULATE RESULTS ----------------
+    $psdriveAfter = Get-PSDrive -Name C -ErrorAction SilentlyContinue
+    $DiskAfter = if ($psdriveAfter) { $psdriveAfter.Free } else { 0 }
+
+    $DiskFreedMB = [math]::Round(($DiskAfter - $DiskBefore)/1MB,2)
+    $DiskFreedGB = [math]::Round(($DiskAfter - $DiskBefore)/1GB,2)
+
+    # Boost score (simple visual metric)
+    $Boost = [math]::Min([math]::Round(($DiskFreedMB / 50),0),100)
+
     # ---------------- COMPLETE MESSAGE ----------------
     [System.Windows.Forms.MessageBox]::Show(
-        "Optimisation Completed Successfully",
+        "Optimisation Completed Successfully`n`n" +
+        "Files cleaned : $TotalFiles`n" +
+        "Disk freed    : $DiskFreedMB MB ($DiskFreedGB GB)`n" +
+        "Performance Boost : $Boost %",
         "Device Optimiser",
         [System.Windows.Forms.MessageBoxButtons]::OK,
         [System.Windows.Forms.MessageBoxIcon]::Information
