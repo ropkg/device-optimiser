@@ -1,10 +1,14 @@
-# Windows Device Optimiser
+# 🧹 Windows Device Optimiser
 
-![Version](https://img.shields.io/badge/version-v1.0-blue)
+![Version](https://img.shields.io/badge/version-v2.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-green)
 ![Script](https://img.shields.io/badge/script-PowerShell-blue)
 ![License](https://img.shields.io/badge/license-MIT-orange)
 ![Maintained](https://img.shields.io/badge/maintained-yes-brightgreen)
+
+## ⬇️ Download
+
+[![Download Device Optimiser](https://img.shields.io/badge/Download-Latest%20Release-blue?style=for-the-badge&logo=windows)](https://github.com/ropkg/device-optimiser/releases/latest)
 
 A lightweight Windows utility to clean temporary files and optimise system performance.
 This tool removes unnecessary files from common Windows locations and helps free up disk space.
